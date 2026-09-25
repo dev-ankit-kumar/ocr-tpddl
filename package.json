@@ -15,17 +15,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "exceljs": "^4.4.0",
     "onnxruntime-web": "^1.30.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "tesseract.js": "^7.0.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@gutenye/ocr-models": "^1.4.2",
     "@tailwindcss/vite": "^4.3.3",
-    "@tesseract.js-data/eng": "^1.0.0",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

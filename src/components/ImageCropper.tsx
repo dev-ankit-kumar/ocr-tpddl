@@ -130,7 +130,7 @@ export function ImageCropper({ image, onApply, onCancel }: ImageCropperProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-950" role="dialog" aria-modal="true" aria-label="Crop photo">
-      <div className="p-3 text-center text-sm text-white/80">Drag the corners to frame just the nameplate / document</div>
+      <div className="p-3 text-center text-sm text-white/80">Drag the corners to frame just the nameplate</div>
 
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
         {url && (

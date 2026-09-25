@@ -1,5 +1,5 @@
 // Main-thread client for the PaddleOCR worker.
-import type { CropRect } from '../../utils/imageFilters'
+import type { CropRect } from '../../types'
 import type { PaddleLine, PaddleRequest, PaddleResponse, ReadOptions } from '../../workers/paddle.worker'
 
 export type { PaddleLine } from '../../workers/paddle.worker'

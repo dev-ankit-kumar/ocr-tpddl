@@ -3,8 +3,5 @@
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
 
-/tesseract/*
-  Cache-Control: public, max-age=604800
-
 /paddle/*
   Cache-Control: public, max-age=604800

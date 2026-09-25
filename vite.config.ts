@@ -28,9 +28,9 @@ export default defineConfig({
       injectRegister: 'script-defer',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'SnapSheet – Documents to Excel',
+        name: 'SnapSheet – Transformer Nameplate to Excel',
         short_name: 'SnapSheet',
-        description: 'Turn photographed documents, receipts and tables into Excel files. OCR runs entirely on your device.',
+        description: 'Reads KVA, Year of MFG, Manufacturer and Sr. No. from transformer nameplate photos into Excel. OCR runs on your device.',
         theme_color: '#0f766e',
         background_color: '#f8fafc',
         display: 'standalone',
@@ -44,15 +44,14 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // App shell (HTML, JS incl. the lazy xlsx chunk and workers, CSS, icons) is precached.
+        // App shell (HTML, JS incl. the lazy xlsx chunk and the worker, CSS, icons) is precached.
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
-        // The OCR engines are large (and only one core variant is used per device),
-        // so they're cached on first use instead of precached.
-        globIgnores: ['tesseract/**', 'paddle/**'],
+        // The OCR engine (~30 MB) is cached on first use instead of precached.
+        globIgnores: ['paddle/**'],
         navigateFallback: 'index.html',
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.pathname.startsWith('/tesseract/') || url.pathname.startsWith('/paddle/'),
+            urlPattern: ({ url }) => url.pathname.startsWith('/paddle/'),
             handler: 'CacheFirst',
             options: {
               cacheName: 'ocr-engine',

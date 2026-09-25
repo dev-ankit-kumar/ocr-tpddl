@@ -14,7 +14,7 @@
       ]
     },
     {
-      "source": "/(tesseract|paddle)/(.*)",
+      "source": "/paddle/(.*)",
       "headers": [
         {
           "key": "Cache-Control",

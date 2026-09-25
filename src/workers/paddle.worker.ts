@@ -2,8 +2,7 @@
 // Web Worker, so the UI stays responsive. Used for nameplate photos, where it is far
 // more accurate than Tesseract on stamped, faded or glary metal plates.
 import * as ort from 'onnxruntime-web/wasm'
-import type { BBox } from '../types'
-import type { CropRect } from '../utils/imageFilters'
+import type { BBox, CropRect } from '../types'
 import {
   ctcDecode,
   detectionSize,

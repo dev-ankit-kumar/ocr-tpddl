@@ -64,18 +64,6 @@ export const DownloadIcon = (p: IconProps) => (
   </Icon>
 )
 
-export const PlusIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <path d="M12 5v14M5 12h14" />
-  </Icon>
-)
-
-export const TrashIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
-  </Icon>
-)
-
 export const CloseIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M18 6 6 18M6 6l12 12" />
@@ -89,35 +77,10 @@ export const ShieldIcon = (p: IconProps) => (
   </Icon>
 )
 
-export const TableIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <rect x="3" y="3" width="18" height="18" rx="2" />
-    <path d="M3 9h18M3 15h18M9 3v18" />
-  </Icon>
-)
-
-export const TextIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <path d="M4 6h16M4 12h16M4 18h10" />
-  </Icon>
-)
-
 export const AlertIcon = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="9" />
     <path d="M12 8v4M12 16h.01" />
-  </Icon>
-)
-
-export const ArrowLeftIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <path d="M19 12H5M12 19l-7-7 7-7" />
-  </Icon>
-)
-
-export const BoltIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <path d="M13 2 3 14h9l-1 8 10-12h-9z" />
   </Icon>
 )
 
