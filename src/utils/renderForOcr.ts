@@ -1,14 +1,12 @@
-// Crop → resize → enhance, written against the subset of the canvas API shared by
+// Crop → resize, written against the subset of the canvas API shared by
 // OffscreenCanvas (worker) and HTMLCanvasElement (main-thread fallback).
-import { DETECT_EDGE, enhanceForOcr, findContentBounds, targetSize, type CropRect } from './imageFilters'
+import { DETECT_EDGE, findContentBounds, targetSize, type CropRect } from './imageFilters'
 
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
 export type CanvasFactory<C> = (width: number, height: number) => { canvas: C; ctx: Ctx2D }
 
 export interface RenderOptions {
-  /** Grayscale, contrast and sharpening. */
-  enhance: boolean
-  /** Crop to the detected sheet of paper. */
+  /** Crop to the area that contains text. */
   autoCrop: boolean
 }
 
@@ -34,10 +32,5 @@ export function renderForOcr<C>(source: CanvasImageSource, width: number, height
   const { canvas, ctx } = create(size.width, size.height)
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(source, crop.x, crop.y, crop.width, crop.height, 0, 0, size.width, size.height)
-  if (options.enhance) {
-    const imageData = ctx.getImageData(0, 0, size.width, size.height)
-    enhanceForOcr(imageData.data, size.width, size.height)
-    ctx.putImageData(imageData, 0, 0)
-  }
   return canvas
 }

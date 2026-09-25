@@ -36,6 +36,37 @@ function unsupportedError(): CameraError | null {
   return null
 }
 
+// ImageCapture (Chrome/Android) isn't in TypeScript's DOM lib yet.
+interface ImageCaptureLike {
+  takePhoto(): Promise<Blob>
+}
+declare const ImageCapture: { new (track: MediaStreamTrack): ImageCaptureLike } | undefined
+
+/** Full-resolution still from the camera; null when unsupported or it fails. */
+async function takeStillPhoto(stream: MediaStream | null): Promise<Blob | null> {
+  const track = stream?.getVideoTracks()[0]
+  if (!track || typeof ImageCapture === 'undefined') return null
+  try {
+    const photo = await new ImageCapture(track).takePhoto()
+    return photo.size > 0 ? photo : null
+  } catch (err) {
+    console.warn('Still photo capture failed, using a video frame instead:', err)
+    return null
+  }
+}
+
+/** Keeps text sharp while the phone moves (Android); silently ignored elsewhere. */
+async function enableContinuousFocus(stream: MediaStream): Promise<void> {
+  const track = stream.getVideoTracks()[0]
+  const modes = (track?.getCapabilities?.() as { focusMode?: string[] } | undefined)?.focusMode
+  if (!track || !modes?.includes('continuous')) return
+  try {
+    await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] })
+  } catch {
+    // Not all cameras accept it; the default focus still works.
+  }
+}
+
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((t) => t.stop())
 }
@@ -101,7 +132,8 @@ export function useCamera() {
 
     try {
       const stream = await openCamera(
-        { audio: false, video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } } },
+        // Ask for up to 4K: small print needs every pixel. Browsers fall back to the best they have.
+        { audio: false, video: { facingMode: { ideal: facing }, width: { ideal: 3840 }, height: { ideal: 2160 } } },
         () => request !== requestRef.current,
       )
       if (request !== requestRef.current) {
@@ -109,6 +141,7 @@ export function useCamera() {
         return
       }
       streamRef.current = stream
+      void enableContinuousFocus(stream)
       const video = videoRef.current
       if (video) {
         video.srcObject = stream
@@ -131,10 +164,15 @@ export function useCamera() {
     void start(facingMode === 'environment' ? 'user' : 'environment')
   }, [facingMode, start])
 
-  /** Grabs the current video frame at full camera resolution. */
+  /**
+   * Takes a real still photo where supported (full sensor resolution, focused),
+   * otherwise grabs the current video frame.
+   */
   const capture = useCallback(async (): Promise<Blob> => {
     const video = videoRef.current
     if (!video || !video.videoWidth) throw new Error('The camera is not ready yet.')
+    const still = await takeStillPhoto(streamRef.current)
+    if (still) return still
     const canvas = document.createElement('canvas')
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight

@@ -10,11 +10,11 @@ A frontend-only React app. You photograph a document, receipt or printed table, 
 Scan → Capture → Extract → Review → Download
 ```
 
-1. **Capture:** a live camera preview (rear camera preferred), or upload / drag-and-drop an image.
-2. **Preprocess** (in a Web Worker): crop to the text area, resize, grayscale, even out lighting, stretch contrast, sharpen.
-3. **OCR** (in Tesseract's own Web Worker): two recognition passes, merged by word position.
+1. **Capture:** a live camera preview (rear camera preferred), **HD photo** (the phone's own camera app), or upload / drag-and-drop an image.
+2. **Preprocess** (in a Web Worker): crop to the text area and resize.
+3. **OCR:** two Tesseract engines run in parallel Web Workers and are merged word by word (see [How OCR works](#how-ocr-works)).
 4. **Structure:** a client-side parser turns the word positions into rows and columns, a header row, or key–value pairs.
-5. **Review:** an editable spreadsheet-style table. Low-confidence cells are highlighted, and a raw-text view lets you re-split the text by hand.
+5. **Review:** an editable spreadsheet-style table. Cells that may be wrong are highlighted, and a raw-text view lets you re-split the text by hand.
 6. **Export:** SheetJS writes `document-data-YYYY-MM-DD.xlsx` in the browser.
 
 ## Tech stack and dependencies
@@ -40,10 +40,10 @@ npm run dev        # http://localhost:5173
 npm run build      # production build in dist/
 npm run preview    # serve the production build
 npm run lint
-npm test           # parser unit tests
+npm test           # unit tests, incl. regression tests on recorded real-photo OCR output
 ```
 
-`predev` and `prebuild` run `scripts/copy-tesseract-assets.mjs`. It copies the Tesseract worker, the WASM cores and `eng.traineddata.gz` from `node_modules` into `public/tesseract/` (git-ignored), so the app never loads OCR files from a CDN.
+`predev` and `prebuild` run `scripts/copy-tesseract-assets.mjs`. It copies the Tesseract worker, the WASM cores and both English language models from `node_modules` into `public/tesseract/` (git-ignored), so the app never loads OCR files from a CDN.
 
 ## Project structure
 
@@ -52,8 +52,9 @@ src/
   components/   Reusable UI (Button, CameraView, EditableTable, RawTextEditor, …)
   pages/        HomePage, ScannerPage, ProcessingPage, ResultsPage
   hooks/        useCamera, useExtraction, useTableEditor, useObjectUrl
-  services/     extractionPipeline, imagePreprocessor, ocrService, excelExport
+  services/     extractionPipeline, imagePreprocessor, ocrService, ocrEnsemble, excelExport
     parser/     layoutParser (word geometry), textParser (separators), tableBuilder
+      __fixtures__/  raw OCR passes recorded from real photos (regression tests)
   workers/      preprocess.worker (OffscreenCanvas), tesseractWorker (engine lifecycle)
   utils/        imageFilters, renderForOcr, text, stats, date
   types/
@@ -65,6 +66,8 @@ OCR and parsing logic live in `services/` and `workers/` and have no React depen
 ## How camera access works
 
 - `navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })` asks for the rear camera on phones and falls back to any camera on desktops. A **Flip** button appears when more than one camera is available.
+- It requests up to 4K and continuous autofocus. Where the browser supports `ImageCapture` (Chrome on Android), the capture button takes a real full-resolution still photo instead of grabbing a video frame.
+- **HD photo** (touch devices) opens the phone's own camera app via `<input type="file" capture="environment">`. It gives full-resolution, focused, HDR photos, which read noticeably more accurately than the live preview. On iPhone, it's the only way to get full-quality photos in a web app.
 - The camera only works in a **secure context**: HTTPS, or `localhost` during development. Over plain HTTP, the app explains this and offers upload instead.
 - Errors have clear messages and an upload fallback: permission denied, no camera, camera in use by another app, unsupported browser. Transient "device busy" errors when reopening the camera are retried automatically.
 - Camera tracks are stopped as soon as a photo is taken or uploaded, and whenever you leave the scanner page. The camera is never left running.
@@ -72,25 +75,30 @@ OCR and parsing logic live in `services/` and `workers/` and have no React depen
 
 ## How OCR works
 
-- **Preprocessing** (`utils/imageFilters.ts`, run in `workers/preprocess.worker.ts` with a main-thread fallback):
-  - **Auto-crop** to the region containing text strokes. Background around the page badly confuses Tesseract's layout analysis.
-  - **Resize** so the long edge is 1200–2400 px.
-  - **Grayscale.**
-  - **Illumination normalization:** divide by the estimated paper brightness, which removes shadows and lighting gradients.
-  - **Contrast stretch and sharpen.**
-  - The **Auto-enhance** checkbox on the scanner turns all of this off (the image is still resized).
-- **Recognition** (`services/ocrService.ts`): the engine runs in Tesseract.js's Web Worker, so the UI stays responsive, with a live progress bar and a Cancel button. Each image gets two passes:
-  - *Single column* (PSM 4): keeps table rows intact.
-  - *Sparse text* (PSM 11): recovers words the first pass occasionally drops on photos.
-  - The passes are merged by bounding box.
+Every choice below was measured against a benchmark of phone photos (receipts, invoices, printed grids, forms and a real crinkled, watermarked nutrition label) with known correct values. It went from 54% of values found (44% in the right column) to 97.4% (97.0%).
+
+- **Preprocessing** (`utils/imageFilters.ts` + `utils/renderForOcr.ts`, run in `workers/preprocess.worker.ts` with a main-thread fallback):
+  - **Auto-crop** to the area containing text strokes (pixels clearly darker than their surroundings). Background around the page badly confuses Tesseract's layout analysis; whole columns can go missing. The **Auto-crop** checkbox on the scanner turns this off.
+  - **Resize** so the long edge is at most 2400 px (small images are upscaled towards 1200 px).
+  - No sharpening or contrast filters. They were tested and made accuracy *worse*.
+- **Recognition** (`services/ocrService.ts`, `workers/tesseractWorker.ts`): two engines run in parallel in their own Web Workers, so the UI stays responsive, with a live progress bar and a Cancel button.
+  - **LSTM engine** (neural, `best_int` model), two passes. *Single block* (PSM 6) keeps table rows intact. *Sparse text* (PSM 11) recovers words the first pass misses and cross-checks numbers.
+  - **Legacy engine** (character-based, PSM 6 on the full page): it keeps decimal points and "%" signs that the LSTM engine often drops on photos ("1.5g" → "15g").
+- **Merging** (`services/ocrEnsemble.ts`): words are paired by position. Text comes from the LSTM engine. Numbers are rebuilt from both readings:
+  - a recovered decimal point with the same digits wins;
+  - look-alikes are fixed only inside numbers (`I.5g` → `1.5g`, `IZ%` → `12%`);
+  - a trailing `9` misread for `g` is restored;
+  - a reading that kept its unit beats one that lost it.
+- **Confidence and highlights:** a value both engines (or two passes) read the same way counts as confident. Numbers the engines read with different digits are always highlighted. Values that don't fit their column (text among numbers, a leading-zero number like `00mg`, a missing decimal where the other values with that unit have one) are highlighted too. On the recorded real photos, **every wrong cell is highlighted**; that's asserted in `src/services/parser/realScans.test.ts`.
 - **Structuring** (`services/parser/`):
-  - The **layout parser** estimates page skew from word positions, rebuilds visual rows, splits rows into cells at wide gaps or ruling lines (`|`), and finds column boundaries from vertical whitespace shared across rows.
+  - The **layout parser** estimates page skew from word positions, rebuilds visual rows, and splits them into cells at wide gaps (adapting to monospaced receipt fonts) or ruling lines (`|`). It finds column boundaries from vertical whitespace shared across rows.
+  - It then picks the densest block of table rows, which leaves out titles, footnotes and watermarks, chooses the header row (merging two-line headers), and repairs misread "%" signs in percentage columns (flagged, never silent).
   - The **text parser** handles tabs, pipes, commas (keeping `1,234` intact), semicolons, runs of spaces, single spaces, and `key: value` lines.
   - The most confident result is used. When nothing looks like a table, the results page opens on the **Raw text** view so you can shape the data yourself.
-  - Words below 60% OCR confidence are highlighted in amber in the table.
-- The engine and language data (~7 MB total, only the build matching your CPU's SIMD support is downloaded) are fetched from your own site on the first scan, then cached in IndexedDB.
+- **First scan:** the engines and language data (about 20 MB; only the build matching your CPU's SIMD support is downloaded) are fetched from your own site once, then cached for offline use.
+- **Speed:** clean documents take about 1–3 s on a laptop. Very noisy photos (creases, watermarks) take longer, mainly the legacy engine, and phones are slower. Giving the legacy engine only the text regions was faster but measurably less accurate, so it always sees the full page.
 
-OCR is never perfect. Always review the table before downloading.
+OCR is never perfect. Review the highlighted cells before downloading. For best results, use **HD photo**, fill the frame with the document, hold steady and avoid glare.
 
 ## How Excel generation works
 
@@ -109,7 +117,7 @@ SnapSheet is a Progressive Web App, set up with `vite-plugin-pwa`. It can be ins
 - **iPhone / iPad (Safari):** tap **Share** → **Add to Home Screen**. The app shows this hint on iOS.
 - **Offline:**
   - The app shell (HTML, JS, CSS, icons, the Excel library) is precached by the service worker.
-  - The OCR engine (worker, WASM core, language model) is cached the first time you scan.
+  - The OCR engines (worker, WASM cores, language models; about 20 MB) are cached the first time you scan.
   - After one successful scan, capture → OCR → Excel works with no connection.
 - **Updates:** after a new deploy, the updated version activates the next time the app is fully closed and reopened. This is deliberate, so an update can never reload the page and wipe a table you're editing.
 - **Files:** manifest and icons are in `vite.config.ts` and `public/*.png`. The service worker (`sw.js`) is generated at build time.

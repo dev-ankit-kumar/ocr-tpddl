@@ -7,7 +7,7 @@ import type { ExtractionResult, Stage } from './types'
 
 interface Capture {
   image: Blob
-  enhance: boolean
+  autoCrop: boolean
 }
 
 export default function App() {
@@ -43,8 +43,8 @@ export default function App() {
   }, [])
 
   const handleExtract = useCallback(
-    (image: Blob, enhance: boolean) => {
-      setCapture({ image, enhance })
+    (image: Blob, autoCrop: boolean) => {
+      setCapture({ image, autoCrop })
       navigate('processing')
     },
     [navigate],
@@ -70,7 +70,7 @@ export default function App() {
       return <ScannerPage onBack={goBack} onExtract={handleExtract} />
     case 'processing':
       return capture ? (
-        <ProcessingPage image={capture.image} enhance={capture.enhance} onDone={handleDone} onCancel={goBack} />
+        <ProcessingPage image={capture.image} autoCrop={capture.autoCrop} onDone={handleDone} onCancel={goBack} />
       ) : (
         <ScannerPage onBack={goBack} onExtract={handleExtract} />
       )

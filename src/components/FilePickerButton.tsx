@@ -8,10 +8,12 @@ interface FilePickerButtonProps {
   variant?: 'primary' | 'secondary' | 'overlay'
   className?: string
   fullWidth?: boolean
+  /** Open the phone's own camera app instead of the gallery (full-resolution, focused photos). */
+  capture?: 'environment'
 }
 
-/** Opens the gallery / file picker for a single image. */
-export function FilePickerButton({ onFile, children, icon, variant = 'secondary', className, fullWidth }: FilePickerButtonProps) {
+/** Opens the gallery / file picker (or the native camera) for a single image. */
+export function FilePickerButton({ onFile, children, icon, variant = 'secondary', className, fullWidth, capture }: FilePickerButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   return (
     <>
@@ -19,6 +21,7 @@ export function FilePickerButton({ onFile, children, icon, variant = 'secondary'
         ref={inputRef}
         type="file"
         accept="image/*"
+        capture={capture}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]

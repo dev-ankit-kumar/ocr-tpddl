@@ -2,7 +2,10 @@
 
 /** Longest edge after resizing. Big enough for small print, small enough to stay fast. */
 export const MAX_EDGE = 2400
-/** Small images are upscaled so glyphs reach a size Tesseract handles well. */
+/**
+ * Small images are upscaled (at most 2×) towards this size. Going higher was
+ * measured to hurt accuracy on phone photos, so keep it modest.
+ */
 export const MIN_EDGE = 1200
 
 export function targetSize(width: number, height: number): { width: number; height: number } {
@@ -106,119 +109,4 @@ function toGray(rgba: Uint8ClampedArray): Uint8ClampedArray {
     gray[j] = 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2]
   }
   return gray
-}
-
-/**
- * Divides out uneven lighting (shadows, gradients, vignetting) by comparing each
- * pixel with its local background brightness. Tesseract binarizes with one global
- * threshold, so without this, dimmer parts of a photo can vanish entirely.
- */
-function normalizeIllumination(gray: Uint8ClampedArray, width: number, height: number): void {
-  const background = estimateBackground(gray, width, height)
-  for (let i = 0; i < gray.length; i++) {
-    gray[i] = (gray[i] / Math.max(1, background[i])) * 245
-  }
-}
-
-/**
- * Paper brightness per pixel. Taking the maximum per block ignores dark text (a
- * plain local mean would be dragged down by it and leave grey halos that Tesseract
- * mistakes for picture regions); the block grid is then smoothed and upsampled.
- */
-function estimateBackground(gray: Uint8ClampedArray, width: number, height: number): Float32Array {
-  const block = Math.max(16, Math.round(Math.max(width, height) / 80))
-  const bw = Math.ceil(width / block)
-  const bh = Math.ceil(height / block)
-  let grid = new Float32Array(bw * bh)
-  for (let y = 0; y < height; y++) {
-    const row = Math.floor(y / block) * bw
-    for (let x = 0; x < width; x++) {
-      const b = row + Math.floor(x / block)
-      if (gray[y * width + x] > grid[b]) grid[b] = gray[y * width + x]
-    }
-  }
-
-  // Two 3×3 mean passes smooth out blocks that were entirely covered by ink.
-  for (let pass = 0; pass < 2; pass++) {
-    const next = new Float32Array(grid.length)
-    for (let y = 0; y < bh; y++) {
-      for (let x = 0; x < bw; x++) {
-        let sum = 0
-        let n = 0
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const yy = y + dy
-            const xx = x + dx
-            if (yy >= 0 && yy < bh && xx >= 0 && xx < bw) {
-              sum += grid[yy * bw + xx]
-              n++
-            }
-          }
-        }
-        next[y * bw + x] = sum / n
-      }
-    }
-    grid = next
-  }
-
-  // Bilinear upsample from block centres.
-  const out = new Float32Array(gray.length)
-  for (let y = 0; y < height; y++) {
-    const gy = Math.min(bh - 1, Math.max(0, (y + 0.5) / block - 0.5))
-    const y0 = Math.floor(gy)
-    const y1 = Math.min(bh - 1, y0 + 1)
-    const fy = gy - y0
-    for (let x = 0; x < width; x++) {
-      const gx = Math.min(bw - 1, Math.max(0, (x + 0.5) / block - 0.5))
-      const x0 = Math.floor(gx)
-      const x1 = Math.min(bw - 1, x0 + 1)
-      const fx = gx - x0
-      const top = grid[y0 * bw + x0] * (1 - fx) + grid[y0 * bw + x1] * fx
-      const bottom = grid[y1 * bw + x0] * (1 - fx) + grid[y1 * bw + x1] * fx
-      out[y * width + x] = top * (1 - fy) + bottom * fy
-    }
-  }
-  return out
-}
-
-/** Stretches the 1st–99th percentile range to full 0–255 (auto-levels). */
-function stretchContrast(gray: Uint8ClampedArray): void {
-  const hist = new Uint32Array(256)
-  for (const v of gray) hist[v]++
-  const cut = gray.length * 0.01
-  let lo = 0
-  let hi = 255
-  let below = hist[0]
-  while (lo < 254 && below < cut) below += hist[++lo]
-  let above = hist[255]
-  while (hi > lo + 1 && above < cut) above += hist[--hi]
-  if (hi - lo < 32) return // nearly uniform image; stretching would only amplify noise
-  const scale = 255 / (hi - lo)
-  for (let i = 0; i < gray.length; i++) gray[i] = (gray[i] - lo) * scale
-}
-
-/** 3×3 unsharp-style sharpen on a single channel. */
-function sharpen(gray: Uint8ClampedArray, width: number, height: number, amount = 0.6): Uint8ClampedArray {
-  const out = new Uint8ClampedArray(gray)
-  for (let y = 1; y < height - 1; y++) {
-    const row = y * width
-    for (let x = 1; x < width - 1; x++) {
-      const i = row + x
-      const neighbours = gray[i - 1] + gray[i + 1] + gray[i - width] + gray[i + width]
-      out[i] = gray[i] + amount * (4 * gray[i] - neighbours)
-    }
-  }
-  return out
-}
-
-/** Grayscale → even out lighting → contrast stretch → sharpen, written back into the RGBA buffer in place. */
-export function enhanceForOcr(rgba: Uint8ClampedArray, width: number, height: number): void {
-  const gray = toGray(rgba)
-  normalizeIllumination(gray, width, height)
-  stretchContrast(gray)
-  const sharp = sharpen(gray, width, height)
-  for (let i = 0, j = 0; j < sharp.length; i += 4, j++) {
-    rgba[i] = rgba[i + 1] = rgba[i + 2] = sharp[j]
-    rgba[i + 3] = 255
-  }
 }

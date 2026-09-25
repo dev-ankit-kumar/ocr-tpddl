@@ -1,10 +1,7 @@
-// Crops, resizes and enhances an image off the main thread using OffscreenCanvas.
+// Crops and resizes an image off the main thread using OffscreenCanvas.
 import { renderForOcr, type CanvasFactory, type RenderOptions } from '../utils/renderForOcr'
 
-export interface PreprocessRequest extends RenderOptions {
-  id: number
-  image: Blob
-}
+export type PreprocessRequest = { id: number; image: Blob } & RenderOptions
 
 export type PreprocessResponse = { id: number; blob: Blob } | { id: number; error: string }
 
@@ -15,10 +12,10 @@ const createCanvas: CanvasFactory<OffscreenCanvas> = (width, height) => {
   return { canvas, ctx }
 }
 
-async function process({ image, ...options }: PreprocessRequest): Promise<Blob> {
-  const bitmap = await createImageBitmap(image, { imageOrientation: 'from-image' })
+async function process(request: PreprocessRequest): Promise<Blob> {
+  const bitmap = await createImageBitmap(request.image, { imageOrientation: 'from-image' })
   try {
-    const canvas = renderForOcr(bitmap, bitmap.width, bitmap.height, options, createCanvas)
+    const canvas = renderForOcr(bitmap, bitmap.width, bitmap.height, request, createCanvas)
     return await canvas.convertToBlob({ type: 'image/png' })
   } finally {
     bitmap.close()

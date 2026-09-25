@@ -81,7 +81,7 @@ export function parseText(text: string, requested: SplitMode = 'auto'): ParseRes
 
   const rows: Cell[][] = lines.map((l) => SPLITTERS[splitMode](l).map(textCell))
   const isKeyValue = splitMode === 'key-value'
-  const table = buildTable(rows, !isKeyValue && splitMode !== 'lines')
+  const { skippedRows: _skipped, ...table } = buildTable(rows, { detectHeader: !isKeyValue && splitMode !== 'lines' })
   if (isKeyValue && table.headers.length === 2) table.headers = ['Field', 'Value']
 
   const structured = splitMode !== 'lines' && score >= 0.6

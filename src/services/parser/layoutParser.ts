@@ -13,6 +13,7 @@ interface Span {
   x0: number
   x1: number
   minConfidence: number
+  words: OcrWord[]
 }
 
 interface Column {
@@ -22,6 +23,8 @@ interface Column {
 
 const PIPE_ONLY_RE = /^[|¦[\]]+$/
 const EDGE_PIPES_RE = /^[|¦]+|[|¦]+$/g
+/** Symbol-only tokens OCR produces from specks, creases and ruling lines ("~~", "—", "''"). */
+const NOISE_RE = /^[~_=—–'"`.,:;^°•·‘’“”]+$/
 
 function wordHeight(w: OcrWord): number {
   return w.bbox.y1 - w.bbox.y0
@@ -96,12 +99,14 @@ function splitLine(words: OcrWord[], gapThreshold: number): Span[] {
     forceBreak = /[|¦]$/.test(word.text)
     if (!text) continue
 
+    const cleaned = text === word.text ? word : { ...word, text }
     if (current && !breakBefore && word.bbox.x0 - current.x1 <= gapThreshold) {
       current.text += ` ${text}`
       current.x1 = Math.max(current.x1, word.bbox.x1)
       current.minConfidence = Math.min(current.minConfidence, word.confidence)
+      current.words.push(cleaned)
     } else {
-      current = { text, x0: word.bbox.x0, x1: word.bbox.x1, minConfidence: word.confidence }
+      current = { text, x0: word.bbox.x0, x1: word.bbox.x1, minConfidence: word.confidence, words: [cleaned] }
       spans.push(current)
     }
   }
@@ -148,7 +153,7 @@ function findColumns(rows: Span[][], minGap: number): Column[] {
   return columns
 }
 
-function columnFor(span: Span, columns: Column[]): number {
+function columnFor(span: { x0: number; x1: number }, columns: Column[]): number {
   let best = 0
   let bestScore = -Infinity
   columns.forEach((col, i) => {
@@ -162,14 +167,75 @@ function columnFor(span: Span, columns: Column[]): number {
   return best
 }
 
+/**
+ * A span whose words sit in different columns (tightly spaced headers such as
+ * "PER SERVE PER 100g") is split word by word instead of landing in one cell.
+ */
+function splitAcrossColumns(span: Span, columns: Column[]): { col: number; text: string; confidence: number }[] {
+  const whole = [{ col: columnFor(span, columns), text: span.text, confidence: span.minConfidence }]
+  // Column each word mostly sits in, or -1 when it lies in a gap between columns.
+  const inside = span.words.map((w) => {
+    let best = -1
+    let bestOverlap = 0
+    columns.forEach((c, i) => {
+      const overlap = Math.min(w.bbox.x1, c.x1) - Math.max(w.bbox.x0, c.x0)
+      if (overlap > bestOverlap) {
+        best = i
+        bestOverlap = overlap
+      }
+    })
+    return best
+  })
+  // A long cell overflowing into the gap before the next column ("Basmati Rice 5kg")
+  // has words in only one column and stays in one piece.
+  if (new Set(inside.filter((c) => c !== -1)).size < 2) return whole
+  // Words in a gap go with the next word that is in a column ("PER" + "100g").
+  const cols = inside.map((c, i) => (c !== -1 ? c : (inside.slice(i + 1).find((x) => x !== -1) ?? inside.slice(0, i).findLast((x) => x !== -1)) as number))
+  return span.words.map((w, i) => ({ col: cols[i], text: w.text, confidence: w.confidence }))
+}
+
 function placeRow(spans: Span[], columns: Column[]): Cell[] {
   const cells: Cell[] = columns.map(() => ({ value: '' }))
-  for (const span of spans) {
-    const cell = cells[columnFor(span, columns)]
-    cell.value = cell.value ? `${cell.value} ${span.text}` : span.text
-    if (span.minConfidence < LOW_CONFIDENCE) cell.uncertain = true
+  for (const piece of spans.flatMap((s) => splitAcrossColumns(s, columns))) {
+    const cell = cells[piece.col]
+    cell.value = cell.value ? `${cell.value} ${piece.text}` : piece.text
+    if (piece.confidence < LOW_CONFIDENCE) cell.uncertain = true
   }
   return cells
+}
+
+/**
+ * The table region: the run of rows with the most multi-cell rows, allowing up to
+ * two single-cell rows (wrapped text, sub-headings) inside it. Titles, footnotes
+ * and watermarks outside the run are left out of the table.
+ */
+function tableRegion(rows: Span[][]): [number, number] | null {
+  let best: [number, number] | null = null
+  let bestCount = 0
+  let start = -1
+  let last = -1
+  let count = 0
+  const close = () => {
+    if (count > bestCount) {
+      best = [start, last]
+      bestCount = count
+    }
+  }
+  rows.forEach((row, i) => {
+    if (row.length < 2) return
+    if (start !== -1 && i - last > 3) {
+      close()
+      start = -1
+    }
+    if (start === -1) {
+      start = i
+      count = 0
+    }
+    last = i
+    count++
+  })
+  if (start !== -1) close()
+  return bestCount >= 2 ? best : null
 }
 
 const NO_TABLE: ParseResult = {
@@ -184,9 +250,24 @@ const hasContent = (words: OcrWord[]) => words.some((w) => /[\p{L}\p{N}]/u.test(
 
 /** Deskewed rows split into cells, plus the typical text height (used as the gap unit). */
 function rowsWithSpans(lines: OcrLine[]): { rows: Span[][]; h: number } {
-  const rows = groupIntoRows(lines).filter(hasContent)
+  const clean = lines.map((l) => ({ ...l, words: l.words.filter((w) => !NOISE_RE.test(w.text)) }))
+  const rows = groupIntoRows(clean).filter(hasContent)
   const h = Math.max(8, median(rows.flat().map(wordHeight)))
-  return { rows: rows.map((r) => splitLine(r, h)).filter((r) => r.length > 0), h }
+  const gap = cellGapThreshold(rows, h)
+  return { rows: rows.map((r) => splitLine(r, gap)).filter((r) => r.length > 0), h }
+}
+
+/**
+ * Gap that separates cells rather than words. Normally about one text height, but
+ * monospaced print (receipts) has word spaces that wide, so the threshold also sits
+ * clearly above the document's typical word space: the median of the in-row gaps
+ * small enough to be spaces (column gaps are ignored so they can't skew it).
+ */
+function cellGapThreshold(rows: OcrWord[][], h: number): number {
+  const spaces = rows
+    .flatMap((r) => r.slice(1).map((w, i) => w.bbox.x0 - r[i].bbox.x1))
+    .filter((g) => g > 0 && g < h * 1.5)
+  return Math.max(h, median(spaces) * 1.4)
 }
 
 /**
@@ -203,22 +284,26 @@ export function parseLayout(lines: OcrLine[]): ParseResult {
   const { rows: spanRows, h } = rowsWithSpans(lines)
   if (spanRows.length < 2) return NO_TABLE
 
-  // The table region runs from the first to the last multi-cell row; titles/footers outside are skipped.
-  const first = spanRows.findIndex((r) => r.length >= 2)
-  const last = spanRows.findLastIndex((r) => r.length >= 2)
-  if (first === -1 || first === last) return NO_TABLE
-  const region = spanRows.slice(first, last + 1)
+  const bounds = tableRegion(spanRows)
+  if (!bounds) return NO_TABLE
+  const region = spanRows.slice(bounds[0], bounds[1] + 1)
 
   const columns = findColumns(region, Math.max(3, h * 0.3))
   if (columns.length < 2) return NO_TABLE
 
-  const cells = region.map((r) => placeRow(r, columns))
+  // A row holding one low-confidence fragment away from the label column is almost
+  // always a watermark, crease or smudge rather than data.
+  const isNoiseRow = (row: Cell[]) => {
+    const filled = row.filter((c) => c.value)
+    return filled.length === 1 && !row[0].value && filled[0].uncertain === true
+  }
+  const cells = region.map((r) => placeRow(r, columns)).filter((r) => !isNoiseRow(r))
   const fill = median(cells.map((r) => r.filter((c) => c.value).length / columns.length))
   const multiShare = region.filter((r) => r.length >= 2).length / region.length
   const confidence = Math.min(1, fill * 0.6 + multiShare * 0.4) * (columns.length > 12 ? 0.6 : 1)
 
-  const table = buildTable(cells)
-  const skipped = spanRows.length - region.length
+  const { skippedRows, ...table } = buildTable(cells, { skipTitles: true })
+  const skipped = spanRows.length - region.length + skippedRows
   const structured = confidence >= 0.55 && table.headers.length >= 2
   const extra = skipped ? ` ${skipped} line(s) outside the table are kept under "Raw text".` : ''
 

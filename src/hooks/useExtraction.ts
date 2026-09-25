@@ -23,7 +23,7 @@ export function useExtraction() {
   const [running, setRunning] = useState(false)
   const controllerRef = useRef<AbortController | null>(null)
 
-  const run = useCallback(async (image: Blob, enhance: boolean): Promise<ExtractionResult | null> => {
+  const run = useCallback(async (image: Blob, autoCrop: boolean): Promise<ExtractionResult | null> => {
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
@@ -32,7 +32,7 @@ export function useExtraction() {
     setRunning(true)
     try {
       return await extractDocument(image, {
-        enhance,
+        autoCrop,
         signal: controller.signal,
         // Only ever move forward so late events from a previous step can't rewind the bar.
         onProgress: (p) => setProgress((prev) => (p.progress >= prev.progress ? p : { ...p, progress: prev.progress })),

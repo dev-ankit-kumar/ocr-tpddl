@@ -1,7 +1,8 @@
 import type { Block, Page, PSM, Worker } from 'tesseract.js'
 import type { BBox, OcrLine, OcrResult } from '../types'
 import { layoutText } from './parser/layoutParser'
-import { getTesseractWorker, PRIMARY_PSM, SECONDARY_PSM, subscribeTesseractProgress } from '../workers/tesseractWorker'
+import { getTesseractWorker, PRIMARY_PSM, SECONDARY_PSM, subscribeTesseractProgress, type EngineKind } from '../workers/tesseractWorker'
+import { agreement, combineEngines, iou, reconcileNumbers } from './ocrEnsemble'
 
 export interface OcrProgressEvent {
   phase: 'load-engine' | 'recognize'
@@ -79,21 +80,97 @@ async function recognizeWith(worker: Worker, image: Blob, psm: PSM): Promise<Ocr
   return toResult(data)
 }
 
-/** Runs OCR on an image entirely in the browser (two passes, merged). */
-export async function recognizeImage(image: Blob, onProgress: (e: OcrProgressEvent) => void): Promise<OcrResult> {
-  let pass = 0
-  const unsubscribe = subscribeTesseractProgress(({ status, progress }) => {
-    if (status === 'recognizing text') onProgress({ phase: 'recognize', progress: (pass + progress) / 2, status })
-    else onProgress({ phase: 'load-engine', progress: loadProgress(status, progress), status })
-  })
-  try {
-    const worker = await getTesseractWorker()
-    onProgress({ phase: 'recognize', progress: 0, status: 'recognizing text' })
-    const primary = await recognizeWith(worker, image, PRIMARY_PSM)
-    pass = 1
-    const secondary = await recognizeWith(worker, image, SECONDARY_PSM)
-    return mergeResults(primary, secondary)
-  } finally {
-    unsubscribe()
+function withLines(lines: OcrLine[], confidence: number): OcrResult {
+  return { lines, confidence, text: layoutText(lines) }
+}
+
+/** Raw output of the three recognition passes, before merging. */
+export interface OcrPasses {
+  block: OcrResult
+  sparse: OcrResult
+  /** Null when the legacy engine failed (e.g. out of memory on an old phone). */
+  legacy: OcrResult | null
+}
+
+/**
+ * Merges the passes: numbers rebuilt from both engines, cross-checked against the
+ * sparse pass, then words only the sparse pass found are added.
+ */
+export function mergePasses({ block, sparse, legacy }: OcrPasses): OcrResult {
+  const combined = legacy ? combineEngines(block.lines, legacy.lines) : block.lines
+  const primary = withLines(reconcileNumbers(combined, sparse.lines), block.confidence)
+  const merged = mergeResults(primary, sparse)
+  return { ...merged, lines: corroborate(merged.lines, [block, sparse, legacy].filter((p) => p !== null)) }
+}
+
+/**
+ * A value that two independent passes read the same way is trustworthy even if each
+ * pass alone was unsure; it takes the highest confidence among the agreeing readings.
+ * This keeps review highlights for values that really are in doubt.
+ */
+function corroborate(lines: OcrLine[], passes: OcrResult[]): OcrLine[] {
+  const readings = passes.map((p) => p.lines.flatMap((l) => l.words))
+  return lines.map((line) => ({
+    ...line,
+    words: line.words.map((word) => {
+      const agreeing = readings
+        .map((words) => words.find((w) => iou(w.bbox, word.bbox) >= 0.3 && agreement({ ...w, text: word.text }, w) === 'agree'))
+        .filter((w) => w !== undefined)
+      if (agreeing.length < 2) return word
+      return { ...word, confidence: Math.max(word.confidence, ...agreeing.map((w) => w.confidence)) }
+    }),
+  }))
+}
+
+/**
+ * Runs OCR entirely in the browser, with both engines working in parallel:
+ * - LSTM engine: block layout, then sparse layout (recovers words the first misses)
+ * - legacy engine: block layout on the full image. (Giving it only the text regions
+ *   was faster but measurably less accurate, so it always sees the whole page.)
+ */
+export async function recognizePasses(image: Blob, onProgress: (e: OcrProgressEvent) => void): Promise<OcrPasses> {
+  // Progress: loading = average of both engines; recognition = 3 passes in total.
+  const load = { lstm: 0, legacy: 0 }
+  const done = { lstm: 0, legacy: 0 }
+  const current = { lstm: 0, legacy: 0 }
+  const report = () => {
+    const recognizing = (done.lstm + current.lstm + done.legacy + current.legacy) / 3
+    if (recognizing > 0) onProgress({ phase: 'recognize', progress: recognizing, status: 'recognizing text' })
+    else onProgress({ phase: 'load-engine', progress: (load.lstm + load.legacy) / 2, status: 'loading' })
   }
+  const listen = (kind: EngineKind) =>
+    subscribeTesseractProgress(kind, ({ status, progress }) => {
+      if (status === 'recognizing text') current[kind] = progress
+      else load[kind] = loadProgress(status, progress)
+      report()
+    })
+  const unsubscribe = [listen('lstm'), listen('legacy')]
+
+  const runLstm = async () => {
+    const worker = await getTesseractWorker('lstm')
+    const block = await recognizeWith(worker, image, PRIMARY_PSM)
+    done.lstm = 1
+    current.lstm = 0
+    const sparse = await recognizeWith(worker, image, SECONDARY_PSM)
+    return { block, sparse }
+  }
+  const runLegacy = async () => recognizeWith(await getTesseractWorker('legacy'), image, PRIMARY_PSM)
+
+  try {
+    const [lstm, legacy] = await Promise.all([
+      runLstm(),
+      runLegacy().catch((err) => {
+        // The legacy engine is an accuracy booster; never fail a scan because of it.
+        console.warn('Legacy OCR engine failed, continuing with LSTM only:', err)
+        return null
+      }),
+    ])
+    return { ...lstm, legacy }
+  } finally {
+    unsubscribe.forEach((u) => u())
+  }
+}
+
+export async function recognizeImage(image: Blob, onProgress: (e: OcrProgressEvent) => void): Promise<OcrResult> {
+  return mergePasses(await recognizePasses(image, onProgress))
 }

@@ -18,25 +18,25 @@ const STEPS: { step: ProcessingStep; label: string }[] = [
 
 interface ProcessingPageProps {
   image: Blob
-  enhance: boolean
+  autoCrop: boolean
   onDone: (result: ExtractionResult) => void
   onCancel: () => void
 }
 
-export function ProcessingPage({ image, enhance, onDone, onCancel }: ProcessingPageProps) {
+export function ProcessingPage({ image, autoCrop, onDone, onCancel }: ProcessingPageProps) {
   const { run, cancel, progress, error, running } = useExtraction()
   const [attempt, setAttempt] = useState(0)
   const previewUrl = useObjectUrl(image)
 
   useEffect(() => {
     let active = true
-    void run(image, enhance).then((result) => {
+    void run(image, autoCrop).then((result) => {
       if (active && result) onDone(result)
     })
     return () => {
       active = false
     }
-  }, [image, enhance, run, onDone, attempt])
+  }, [image, autoCrop, run, onDone, attempt])
 
   const handleCancel = () => {
     cancel()
@@ -96,7 +96,7 @@ export function ProcessingPage({ image, enhance, onDone, onCancel }: ProcessingP
               })}
             </ol>
             <p className="text-xs text-slate-500">
-              The first scan downloads the OCR engine (~7 MB) once; later scans start much faster.
+              The first scan downloads the OCR engines (about 20 MB) once; later scans start much faster and work offline.
             </p>
             <Button variant="secondary" onClick={handleCancel}>
               Cancel

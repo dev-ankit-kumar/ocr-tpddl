@@ -16,6 +16,11 @@ const assets = [
   ['tesseract.js-core/tesseract-core-simd-lstm.wasm.js', 'core/tesseract-core-simd-lstm.wasm.js'],
   ['tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm.js', 'core/tesseract-core-relaxedsimd-lstm.wasm.js'],
   ['@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz', 'lang/eng.traineddata.gz'],
+  // Legacy (character-based) engine, run alongside LSTM: it keeps decimal points the LSTM drops.
+  ['tesseract.js-core/tesseract-core.wasm.js', 'core-legacy/tesseract-core.wasm.js'],
+  ['tesseract.js-core/tesseract-core-simd.wasm.js', 'core-legacy/tesseract-core-simd.wasm.js'],
+  ['tesseract.js-core/tesseract-core-relaxedsimd.wasm.js', 'core-legacy/tesseract-core-relaxedsimd.wasm.js'],
+  ['@tesseract.js-data/eng/4.0.0/eng.traineddata.gz', 'lang-legacy/eng.traineddata.gz'],
 ]
 
 let copied = 0

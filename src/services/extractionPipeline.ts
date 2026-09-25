@@ -4,7 +4,7 @@ import { recognizeImage } from './ocrService'
 import { parseOcrResult } from './parser'
 
 export interface ExtractOptions {
-  enhance: boolean
+  autoCrop: boolean
   onProgress: (p: ProcessingProgress) => void
   signal?: AbortSignal
 }
@@ -22,10 +22,9 @@ function throwIfAborted(signal?: AbortSignal) {
 }
 
 /** Image → preprocessing → OCR → structured table. Everything runs locally. */
-export async function extractDocument(image: Blob, { enhance, onProgress, signal }: ExtractOptions): Promise<ExtractionResult> {
+export async function extractDocument(image: Blob, { autoCrop, onProgress, signal }: ExtractOptions): Promise<ExtractionResult> {
   onProgress({ step: 'preprocess', progress: 0, label: 'Preparing image…' })
-  // Auto-crop is tied to the enhance toggle so users have one simple switch.
-  const prepared = await preprocessImage(image, { enhance, autoCrop: enhance })
+  const prepared = await preprocessImage(image, { autoCrop })
   throwIfAborted(signal)
 
   onProgress({ step: 'load-engine', progress: overall('load-engine', 0), label: 'Loading OCR engine…' })

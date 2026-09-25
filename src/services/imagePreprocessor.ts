@@ -73,7 +73,7 @@ async function runOnMainThread(image: Blob, options: RenderOptions): Promise<Blo
   )
 }
 
-/** Crops, resizes and (optionally) enhances an image for OCR. Never leaves the device. */
+/** Crops (optionally) and resizes an image for OCR. Never leaves the device. */
 export async function preprocessImage(image: Blob, options: RenderOptions): Promise<Blob> {
   if (supportsWorkerPath()) {
     try {

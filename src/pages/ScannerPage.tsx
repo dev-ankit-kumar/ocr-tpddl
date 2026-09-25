@@ -4,7 +4,7 @@ import { AppHeader } from '../components/AppHeader'
 import { Button } from '../components/Button'
 import { CameraView } from '../components/CameraView'
 import { FilePickerButton } from '../components/FilePickerButton'
-import { RetakeIcon, SparkleIcon, SwitchCameraIcon, UploadIcon } from '../components/icons'
+import { CameraIcon, RetakeIcon, SparkleIcon, SwitchCameraIcon, UploadIcon } from '../components/icons'
 import { PrivacyNote } from '../components/PrivacyNote'
 import { useCamera } from '../hooks/useCamera'
 import { useObjectUrl } from '../hooks/useObjectUrl'
@@ -14,17 +14,18 @@ const MAX_FILE_BYTES = 30 * 1024 * 1024
 
 interface ScannerPageProps {
   onBack: () => void
-  onExtract: (image: Blob, enhance: boolean) => void
+  onExtract: (image: Blob, autoCrop: boolean) => void
 }
 
 export function ScannerPage({ onBack, onExtract }: ScannerPageProps) {
   const camera = useCamera()
   const { start, stop } = camera
   const [image, setImage] = useState<Blob | null>(null)
-  const [enhance, setEnhance] = useState(true)
+  const [autoCrop, setAutoCrop] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const previewUrl = useObjectUrl(image)
+  const [hasNativeCamera] = useState(() => window.matchMedia('(pointer: coarse)').matches)
 
   useEffect(() => {
     void start()
@@ -112,20 +113,20 @@ export function ScannerPage({ onBack, onExtract }: ScannerPageProps) {
             <label className="flex items-center gap-3 rounded-xl bg-white px-3.5 py-3 text-sm ring-1 ring-slate-200">
               <input
                 type="checkbox"
-                checked={enhance}
-                onChange={(e) => setEnhance(e.target.checked)}
+                checked={autoCrop}
+                onChange={(e) => setAutoCrop(e.target.checked)}
                 className="size-4 accent-brand-700"
               />
               <span>
-                <span className="font-medium text-slate-800">Auto-enhance</span>
-                <span className="text-slate-500"> – crop to the page, boost contrast and sharpen for better accuracy</span>
+                <span className="font-medium text-slate-800">Auto-crop</span>
+                <span className="text-slate-500"> – trim the background around the document for better accuracy</span>
               </span>
             </label>
             <div className="grid grid-cols-[auto_1fr] gap-2">
               <Button variant="secondary" size="lg" icon={<RetakeIcon />} onClick={handleRetake}>
                 Retake
               </Button>
-              <Button size="lg" icon={<SparkleIcon />} onClick={() => onExtract(image, enhance)}>
+              <Button size="lg" icon={<SparkleIcon />} onClick={() => onExtract(image, autoCrop)}>
                 Extract Data
               </Button>
             </div>
@@ -144,10 +145,23 @@ export function ScannerPage({ onBack, onExtract }: ScannerPageProps) {
             >
               <span className="size-14 rounded-full bg-brand-700" />
             </button>
-            <span />
+            {hasNativeCamera ? (
+              // The phone's own camera app takes full-resolution, focused, HDR photos,
+              // which read far more accurately than a frame from the live preview.
+              <FilePickerButton onFile={handleFile} icon={<CameraIcon />} capture="environment" className="justify-self-end">
+                HD photo
+              </FilePickerButton>
+            ) : (
+              <span />
+            )}
           </div>
         )}
 
+        {!image && (
+          <p className="text-center text-xs text-slate-500">
+            Tip: fill the frame with the document, hold steady and avoid glare.{hasNativeCamera && ' HD photo gives the best accuracy.'}
+          </p>
+        )}
         <PrivacyNote className="justify-center text-center" />
       </main>
     </div>
