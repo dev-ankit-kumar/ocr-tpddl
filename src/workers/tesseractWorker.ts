@@ -18,6 +18,9 @@ async function spawn(): Promise<Worker> {
     corePath: assetUrl('core'),
     langPath: assetUrl('lang'),
     gzip: true,
+    // Load the worker from its real URL (not a blob: wrapper) so the service worker
+    // can serve it and the WASM core offline.
+    workerBlobURL: false,
     // Caches language data in IndexedDB so later visits skip the download.
     cacheMethod: 'write',
     logger: (message) => listener?.(message),

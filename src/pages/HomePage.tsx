@@ -1,5 +1,6 @@
 import { Button } from '../components/Button'
 import { BoltIcon, CameraIcon, ShieldIcon, TableIcon } from '../components/icons'
+import { InstallAppButton } from '../components/InstallAppButton'
 import { Logo } from '../components/Logo'
 import { PrivacyNote } from '../components/PrivacyNote'
 
@@ -33,9 +34,12 @@ export function HomePage({ onStart }: { onStart: () => void }) {
       </ol>
 
       <div className="mt-8">
-        <Button size="lg" icon={<CameraIcon />} onClick={onStart} fullWidth className="sm:w-auto">
-          Scan Document
-        </Button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Button size="lg" icon={<CameraIcon />} onClick={onStart} fullWidth className="sm:w-auto">
+            Scan Document
+          </Button>
+          <InstallAppButton />
+        </div>
         <PrivacyNote className="mt-4" />
       </div>
 

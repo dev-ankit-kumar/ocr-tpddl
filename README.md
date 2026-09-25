@@ -28,6 +28,7 @@ Scan → Capture → Extract → Review → Download
 | `tailwindcss`, `@tailwindcss/vite` | Styling (Tailwind v4) |
 | `@tesseract.js-data/eng` (dev) | English language model, copied into the build |
 | `oxlint`, `vitest` (dev) | Linting and unit tests |
+| `vite-plugin-pwa` (dev) | Web manifest + Workbox service worker (installable, offline) |
 
 ## Local setup
 
@@ -99,6 +100,21 @@ OCR is never perfect. Always review the table before downloading.
 - converts plain numbers such as `1,450.00` into real Excel numbers, but keeps IDs with leading zeros, currency and percentages as text so nothing is lost;
 - adds a **Raw Text** sheet with the OCR text for reference;
 - saves the file as `document-data-YYYY-MM-DD.xlsx` (local date) using `XLSX.writeFile`, all in the browser.
+
+## Install as a mobile app (PWA)
+
+SnapSheet is a Progressive Web App, set up with `vite-plugin-pwa`. It can be installed to the home screen and runs full-screen like a native app, offline included.
+
+- **Android / Chrome / Edge:** tap **Install app** on the home screen, or use the browser menu → *Install app* / *Add to Home screen*.
+- **iPhone / iPad (Safari):** tap **Share** → **Add to Home Screen**. The app shows this hint on iOS.
+- **Offline:**
+  - The app shell (HTML, JS, CSS, icons, the Excel library) is precached by the service worker.
+  - The OCR engine (worker, WASM core, language model) is cached the first time you scan.
+  - After one successful scan, capture → OCR → Excel works with no connection.
+- **Updates:** after a new deploy, the updated version activates the next time the app is fully closed and reopened. This is deliberate, so an update can never reload the page and wipe a table you're editing.
+- **Files:** manifest and icons are in `vite.config.ts` and `public/*.png`. The service worker (`sw.js`) is generated at build time.
+
+Installation and service workers need HTTPS (or `localhost`), which Vercel and Netlify provide. They are disabled in `npm run dev`; use `npm run build && npm run preview` to test them locally.
 
 ## Deployment
 
