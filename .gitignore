@@ -23,5 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
-# Generated from node_modules by scripts/copy-tesseract-assets.mjs
+# Generated from node_modules by scripts/copy-ocr-assets.mjs
 public/tesseract
+public/paddle

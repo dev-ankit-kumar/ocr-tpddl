@@ -1,13 +1,39 @@
 # SnapSheet: documents to Excel
 
-A frontend-only React app. You photograph a document, receipt or printed table, the app reads it in your browser with **Tesseract.js**, lays the text out as an editable table, and downloads it as an **.xlsx** file.
+A frontend-only React app with two modes:
+
+- **Transformer nameplates** (main mode): photograph plate after plate. The app reads **Make, Sr. No, KVA and Year of Mfg**, you check them, and at the end you download one formatted Excel **register** of all transformers.
+- **Any table:** photograph a document, receipt or printed table, review it as an editable table, and download it as an **.xlsx** file.
 
 > Your document is processed on your device and is not uploaded to any server. There is no backend, no database, no analytics, and no third-party requests at runtime.
 
-## How it works
+## Transformer nameplate mode
 
 ```
-Scan → Capture → Extract → Review → Download
+Scan Nameplate → capture → Read Nameplate → check 4 fields → Save & scan next → … → Register → Download Excel
+```
+
+1. **OCR:** [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) PP-OCRv4 models run on the device via ONNX Runtime Web, in a Web Worker (`workers/paddle.worker.ts`). PaddleOCR is far more accurate than Tesseract on photos of stamped, faded or glary metal plates.
+   - The photo is contrast-normalized first (local mean and spread), which makes faint stamped text readable.
+   - Detection and recognition follow the reference pipeline, with lightweight axis-aligned boxes instead of OpenCV (`services/paddle/paddleCore.ts`), which avoids a ~10 MB dependency.
+2. **Fields** (`services/nameplate/extractNameplate.ts`, unit-tested on recorded real plates):
+   - Labels are found even when OCR mangles them: "TRF.SR.NO.", "SERIAL NO", "YEAR OF MFG", "YEAROP MFG", "PANUTACT" (MANUFACTURE), "KVA".
+   - The value next to each label is read. When a value is missing or uncertain, the value box beside the label is cropped, **zoomed in and re-read**. This is how faint years like "2011" and "2007" are recovered.
+   - Validation: years must fall between 1950 and the current year; KVA is checked against standard ratings (IS 1180/2026) and **cross-checked with the plate's own voltage × current** (√3·V·I; e.g. 11000 V × 16.53 A = 315 kVA). Numeric serials get look-alike letters fixed (S→5, O→0), and the field is flagged.
+   - Make is matched against known manufacturers (`services/nameplate/makers.ts`; add more there), falling back to the "… LTD" line that isn't the customer's.
+3. **Review:** each field shows **Read ✓**, **Check** (with the reason) or **Enter**. Tap the photo to zoom in. Typing a value or tapping **Looks right** marks it verified.
+4. **Register:** saved on the device (`localStorage`, with a small photo thumbnail), so closing the tab or losing signal never loses data. Everything stays editable. On phones it's shown as cards.
+5. **Excel** (`services/nameplate/registerExport.ts`, ExcelJS, lazy-loaded): `transformer-register-YYYY-MM-DD.xlsx` with:
+   - a title row, a bold white-on-teal header, borders, zebra rows, a frozen header row, filters and print setup;
+   - KVA and Year as real numbers, and Sr. No as text (leading zeros kept);
+   - values that were never verified highlighted amber, with a "please verify" note.
+
+On the two sample plates, the clear Nucon plate reads all four fields correctly in about 4.5 s on a laptop. The badly stained Vijai plate yields the year (flagged); its serial, KVA and make are flagged for manual entry. Nothing is ever confidently wrong.
+
+## Table mode
+
+```
+Scan any table → Capture → Extract → Review → Download
 ```
 
 1. **Capture:** a live camera preview (rear camera preferred), **HD photo** (the phone's own camera app), or upload / drag-and-drop an image.
@@ -22,11 +48,14 @@ Scan → Capture → Extract → Review → Download
 | Package | Purpose |
 | --- | --- |
 | `react`, `react-dom` | UI |
-| `tesseract.js` | OCR (WASM, runs in a Web Worker) |
+| `tesseract.js` | OCR for table mode (WASM, runs in Web Workers) |
+| `onnxruntime-web` | Runs the PaddleOCR models for nameplate mode (WASM, multi-threaded) |
+| `exceljs` | Formatted Excel register (styles, frozen header, notes). SheetJS's free edition can't write styles. |
 | `xlsx` (SheetJS 0.20.3, from the official SheetJS CDN tarball) | Excel generation. The npm-registry `xlsx` is stuck at 0.18.5, which has known advisories. |
 | `vite`, `@vitejs/plugin-react`, `typescript` | Build tooling |
 | `tailwindcss`, `@tailwindcss/vite` | Styling (Tailwind v4) |
-| `@tesseract.js-data/eng` (dev) | English language model, copied into the build |
+| `@tesseract.js-data/eng` (dev) | Tesseract English language models, copied into the build |
+| `@gutenye/ocr-models` (dev) | PaddleOCR PP-OCRv4 detection/recognition models (ONNX), copied into the build |
 | `oxlint`, `vitest` (dev) | Linting and unit tests |
 | `vite-plugin-pwa` (dev) | Web manifest + Workbox service worker (installable, offline) |
 
@@ -43,22 +72,25 @@ npm run lint
 npm test           # unit tests, incl. regression tests on recorded real-photo OCR output
 ```
 
-`predev` and `prebuild` run `scripts/copy-tesseract-assets.mjs`. It copies the Tesseract worker, the WASM cores and both English language models from `node_modules` into `public/tesseract/` (git-ignored), so the app never loads OCR files from a CDN.
+`predev` and `prebuild` run `scripts/copy-ocr-assets.mjs`. It copies the OCR runtimes and models from `node_modules` into `public/tesseract/` and `public/paddle/` (both git-ignored), so the app never loads OCR files from a CDN.
 
 ## Project structure
 
 ```
 src/
   components/   Reusable UI (Button, CameraView, EditableTable, RawTextEditor, …)
-  pages/        HomePage, ScannerPage, ProcessingPage, ResultsPage
-  hooks/        useCamera, useExtraction, useTableEditor, useObjectUrl
-  services/     extractionPipeline, imagePreprocessor, ocrService, ocrEnsemble, excelExport
-    parser/     layoutParser (word geometry), textParser (separators), tableBuilder
-      __fixtures__/  raw OCR passes recorded from real photos (regression tests)
-  workers/      preprocess.worker (OffscreenCanvas), tesseractWorker (engine lifecycle)
-  utils/        imageFilters, renderForOcr, text, stats, date
+  pages/        HomePage, ScannerPage, ProcessingPage, ResultsPage (table), NameplateReviewPage, RegisterPage
+  hooks/        useCamera, useProcessing, useRegister, useTableEditor, useObjectUrl, useInstallPrompt
+  services/
+    nameplate/  extractNameplate (fields), makers, scanNameplate (pipeline), registerExport (Excel)
+    paddle/     paddleCore (pre/post-processing), paddleClient (worker RPC)
+    parser/     table mode: layoutParser, textParser, tableBuilder
+    …           table mode: extractionPipeline, imagePreprocessor, ocrService, ocrEnsemble, excelExport
+    */__fixtures__/  OCR output recorded from real photos (regression tests)
+  workers/      paddle.worker (ONNX), tesseractWorker, preprocess.worker (OffscreenCanvas)
+  utils/        imageFilters, renderForOcr, thumbnail, text, stats, date
   types/
-scripts/        copy-tesseract-assets.mjs
+scripts/        copy-ocr-assets.mjs
 ```
 
 OCR and parsing logic live in `services/` and `workers/` and have no React dependency.
@@ -117,7 +149,7 @@ SnapSheet is a Progressive Web App, set up with `vite-plugin-pwa`. It can be ins
 - **iPhone / iPad (Safari):** tap **Share** → **Add to Home Screen**. The app shows this hint on iOS.
 - **Offline:**
   - The app shell (HTML, JS, CSS, icons, the Excel library) is precached by the service worker.
-  - The OCR engines (worker, WASM cores, language models; about 20 MB) are cached the first time you scan.
+  - The OCR engine for a mode is cached the first time you use it. Nameplate mode is about 30 MB (ONNX Runtime ~14 MB + models ~16 MB, less over the network thanks to compression); table mode is about 20 MB. Each mode downloads only its own engine.
   - After one successful scan, capture → OCR → Excel works with no connection.
 - **Updates:** after a new deploy, the updated version activates the next time the app is fully closed and reopened. This is deliberate, so an update can never reload the page and wipe a table you're editing.
 - **Files:** manifest and icons are in `vite.config.ts` and `public/*.png`. The service worker (`sw.js`) is generated at build time.
@@ -126,7 +158,9 @@ Installation and service workers need HTTPS (or `localhost`), which Vercel and N
 
 ## Deployment
 
-The output is a static site in `dist/`. No server-side configuration or environment variables are needed.
+The output is a static site in `dist/`. No environment variables are needed.
+
+**Cross-origin isolation headers** (`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`) let the OCR engines use several CPU threads, which makes them several times faster. They're already configured in `vercel.json` (Vercel), `public/_headers` (Netlify) and `vite.config.ts` (dev/preview). Without them, everything still works, just single-threaded.
 
 **Vercel:** import the repo. The framework preset is **Vite**; the build command is `npm run build` and the output directory is `dist`.
 

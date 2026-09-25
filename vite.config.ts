@@ -1,10 +1,23 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defaultClientConditions, defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+
+// Cross-origin isolation enables multi-threaded WebAssembly for the OCR engines
+// (several times faster). Everything the app loads is same-origin, so it's safe.
+// The same headers are set for production in vercel.json / public/_headers.
+const isolationHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+}
 
 // https://vite.dev/config/
 export default defineConfig({
+  // ONNX Runtime's WebAssembly is served from public/paddle (see scripts/copy-ocr-assets.mjs);
+  // this condition stops Vite from bundling a second 14 MB copy of it.
+  resolve: { conditions: ['onnxruntime-web-use-extern-wasm', ...defaultClientConditions] },
+  server: { headers: isolationHeaders },
+  preview: { headers: isolationHeaders },
   plugins: [
     react(),
     tailwindcss(),
@@ -33,17 +46,17 @@ export default defineConfig({
       workbox: {
         // App shell (HTML, JS incl. the lazy xlsx chunk and workers, CSS, icons) is precached.
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
-        // The OCR engine is large and only one core variant is used per device,
-        // so it's cached on first use instead of precached.
-        globIgnores: ['tesseract/**'],
+        // The OCR engines are large (and only one core variant is used per device),
+        // so they're cached on first use instead of precached.
+        globIgnores: ['tesseract/**', 'paddle/**'],
         navigateFallback: 'index.html',
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.pathname.startsWith('/tesseract/'),
+            urlPattern: ({ url }) => url.pathname.startsWith('/tesseract/') || url.pathname.startsWith('/paddle/'),
             handler: 'CacheFirst',
             options: {
               cacheName: 'ocr-engine',
-              expiration: { maxEntries: 10 },
+              expiration: { maxEntries: 20 },
               cacheableResponse: { statuses: [200] },
             },
           },

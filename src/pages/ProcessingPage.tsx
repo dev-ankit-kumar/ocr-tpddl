@@ -5,49 +5,47 @@ import { Button } from '../components/Button'
 import { PrivacyNote } from '../components/PrivacyNote'
 import { Spinner } from '../components/Spinner'
 import { ProgressBar } from '../components/ProgressBar'
-import { useExtraction } from '../hooks/useExtraction'
 import { useObjectUrl } from '../hooks/useObjectUrl'
-import type { ExtractionResult, ProcessingStep } from '../types'
+import { useProcessing, type ProcessingTask } from '../hooks/useProcessing'
+import type { ProcessingStep } from '../types'
 
-const STEPS: { step: ProcessingStep; label: string }[] = [
-  { step: 'preprocess', label: 'Prepare image' },
-  { step: 'load-engine', label: 'Load OCR engine' },
-  { step: 'recognize', label: 'Read text' },
-  { step: 'parse', label: 'Build table' },
-]
+export type ProcessingSteps = { step: ProcessingStep; label: string }[]
 
-interface ProcessingPageProps {
+interface ProcessingPageProps<T> {
   image: Blob
-  autoCrop: boolean
-  onDone: (result: ExtractionResult) => void
+  title: string
+  steps: ProcessingSteps
+  /** Must be stable (useCallback): a new task restarts processing. */
+  task: ProcessingTask<T>
+  onDone: (result: T) => void
   onCancel: () => void
 }
 
-export function ProcessingPage({ image, autoCrop, onDone, onCancel }: ProcessingPageProps) {
-  const { run, cancel, progress, error, running } = useExtraction()
+export function ProcessingPage<T>({ image, title, steps, task, onDone, onCancel }: ProcessingPageProps<T>) {
+  const { run, cancel, progress, error, running } = useProcessing<T>()
   const [attempt, setAttempt] = useState(0)
   const previewUrl = useObjectUrl(image)
 
   useEffect(() => {
     let active = true
-    void run(image, autoCrop).then((result) => {
-      if (active && result) onDone(result)
+    void run(task).then((result) => {
+      if (active && result !== null) onDone(result)
     })
     return () => {
       active = false
     }
-  }, [image, autoCrop, run, onDone, attempt])
+  }, [task, run, onDone, attempt])
 
   const handleCancel = () => {
     cancel()
     onCancel()
   }
 
-  const currentIndex = STEPS.findIndex((s) => s.step === progress.step)
+  const currentIndex = Math.max(0, steps.findIndex((s) => s.step === progress.step))
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <AppHeader title="Extracting data" onBack={handleCancel} />
+      <AppHeader title={title} onBack={handleCancel} />
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 p-5">
         {previewUrl && (
           <div className="relative mx-auto aspect-[3/4] w-40 overflow-hidden rounded-2xl bg-slate-200 shadow-md ring-1 ring-slate-200">
@@ -61,7 +59,7 @@ export function ProcessingPage({ image, autoCrop, onDone, onCancel }: Processing
         {error ? (
           <Alert
             tone="error"
-            title="Extraction failed"
+            title="Reading failed"
             action={
               <div className="flex gap-2">
                 <Button size="sm" onClick={() => setAttempt((a) => a + 1)}>
@@ -79,7 +77,7 @@ export function ProcessingPage({ image, autoCrop, onDone, onCancel }: Processing
           <>
             <ProgressBar value={progress.progress} label={progress.label} />
             <ol className="space-y-2.5">
-              {STEPS.map((s, i) => {
+              {steps.map((s, i) => {
                 const state = i < currentIndex ? 'done' : i === currentIndex ? 'active' : 'todo'
                 return (
                   <li key={s.step} className="flex items-center gap-3 text-sm">
@@ -96,7 +94,7 @@ export function ProcessingPage({ image, autoCrop, onDone, onCancel }: Processing
               })}
             </ol>
             <p className="text-xs text-slate-500">
-              The first scan downloads the OCR engines (about 20 MB) once; later scans start much faster and work offline.
+              The first scan downloads the OCR engine (about 20–30 MB) once; later scans start much faster and work offline.
             </p>
             <Button variant="secondary" onClick={handleCancel}>
               Cancel

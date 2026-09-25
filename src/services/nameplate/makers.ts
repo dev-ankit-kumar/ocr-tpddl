@@ -1,0 +1,33 @@
+// Transformer manufacturers commonly found on Indian distribution networks.
+// `keys` are matched against OCR text with spaces/punctuation removed (uppercase).
+// Add new makes here; users can also type any make during review.
+export const MAKERS: { name: string; keys: string[] }[] = [
+  { name: 'NUCON', keys: ['NUCON'] },
+  { name: 'VIJAI ELECTRICALS', keys: ['VIJAI', 'VIJAIELECTRICALS'] },
+  { name: 'KIRLOSKAR', keys: ['KIRLOSKAR'] },
+  { name: 'CROMPTON GREAVES', keys: ['CROMPTON', 'CGPOWER'] },
+  { name: 'ABB', keys: ['ABBLTD', 'ABBINDIA'] },
+  { name: 'SIEMENS', keys: ['SIEMENS'] },
+  { name: 'SCHNEIDER', keys: ['SCHNEIDER'] },
+  { name: 'VOLTAMP', keys: ['VOLTAMP'] },
+  { name: 'BHARAT BIJLEE', keys: ['BHARATBIJLEE'] },
+  { name: 'ALSTOM', keys: ['ALSTOM'] },
+  { name: 'AREVA', keys: ['AREVA'] },
+  { name: 'EMCO', keys: ['EMCOLTD', 'EMCOLIMITED'] },
+  { name: 'BHEL', keys: ['BHEL', 'BHARATHEAVY'] },
+  { name: 'TECHNICAL ASSOCIATES', keys: ['TECHNICALASSOCIATES'] },
+  { name: 'INDO TECH', keys: ['INDOTECH'] },
+  { name: 'KOTSONS', keys: ['KOTSONS'] },
+  { name: 'UTTAM BHARAT', keys: ['UTTAMBHARAT'] },
+  { name: 'ANDREW YULE', keys: ['ANDREWYULE'] },
+  { name: 'MARSONS', keys: ['MARSONS'] },
+  { name: 'TRANSFORMERS & RECTIFIERS', keys: ['TRANSFORMERSRECTIFIERS', 'TRANSFORMERSANDRECTIFIERS'] },
+  { name: 'RAYCHEM RPG', keys: ['RAYCHEM'] },
+  { name: 'SHILCHAR', keys: ['SHILCHAR'] },
+  { name: 'IMP POWERS', keys: ['IMPPOWERS'] },
+  { name: 'DANISH', keys: ['DANISHPOWER'] },
+  { name: 'JYOTI', keys: ['JYOTILTD', 'JYOTILIMITED'] },
+  { name: 'TOSHIBA', keys: ['TOSHIBA'] },
+  { name: 'HITACHI', keys: ['HITACHI'] },
+  { name: 'KANOHAR', keys: ['KANOHAR'] },
+]

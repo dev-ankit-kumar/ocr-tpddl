@@ -4,34 +4,41 @@ import { AppHeader } from '../components/AppHeader'
 import { Button } from '../components/Button'
 import { CameraView } from '../components/CameraView'
 import { FilePickerButton } from '../components/FilePickerButton'
-import { CameraIcon, RetakeIcon, SparkleIcon, SwitchCameraIcon, UploadIcon } from '../components/icons'
+import { CameraIcon, CropIcon, RetakeIcon, SparkleIcon, SwitchCameraIcon, UploadIcon } from '../components/icons'
+import { ImageCropper } from '../components/ImageCropper'
 import { PrivacyNote } from '../components/PrivacyNote'
 import { useCamera } from '../hooks/useCamera'
 import { useObjectUrl } from '../hooks/useObjectUrl'
+import { initPaddle } from '../services/paddle/paddleClient'
+import type { ScanMode } from '../types'
 import { warmUpTesseract } from '../workers/tesseractWorker'
 
 const MAX_FILE_BYTES = 30 * 1024 * 1024
 
 interface ScannerPageProps {
+  mode: ScanMode
   onBack: () => void
   onExtract: (image: Blob, autoCrop: boolean) => void
 }
 
-export function ScannerPage({ onBack, onExtract }: ScannerPageProps) {
+export function ScannerPage({ mode, onBack, onExtract }: ScannerPageProps) {
+  const nameplate = mode === 'nameplate'
   const camera = useCamera()
   const { start, stop } = camera
   const [image, setImage] = useState<Blob | null>(null)
   const [autoCrop, setAutoCrop] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [cropping, setCropping] = useState(false)
   const previewUrl = useObjectUrl(image)
   const [hasNativeCamera] = useState(() => window.matchMedia('(pointer: coarse)').matches)
 
   useEffect(() => {
     void start()
     // Load the OCR engine while the user frames the shot.
-    warmUpTesseract()
-  }, [start])
+    if (nameplate) initPaddle().catch(() => {})
+    else warmUpTesseract()
+  }, [start, nameplate])
 
   const acceptImage = (blob: Blob) => {
     setError(null)
@@ -68,7 +75,7 @@ export function ScannerPage({ onBack, onExtract }: ScannerPageProps) {
 
   return (
     <div className="flex h-dvh flex-col bg-slate-50">
-      <AppHeader title={image ? 'Check your photo' : 'Scan document'} onBack={onBack} />
+      <AppHeader title={image ? 'Check your photo' : nameplate ? 'Scan nameplate' : 'Scan document'} onBack={onBack} />
 
       <main
         className="mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4"
@@ -110,6 +117,8 @@ export function ScannerPage({ onBack, onExtract }: ScannerPageProps) {
 
         {image ? (
           <div className="flex flex-col gap-3">
+            {/* Nameplate reading finds the fields itself; cropping only matters for tables. */}
+            {!nameplate && (
             <label className="flex items-center gap-3 rounded-xl bg-white px-3.5 py-3 text-sm ring-1 ring-slate-200">
               <input
                 type="checkbox"
@@ -122,12 +131,16 @@ export function ScannerPage({ onBack, onExtract }: ScannerPageProps) {
                 <span className="text-slate-500"> – trim the background around the document for better accuracy</span>
               </span>
             </label>
-            <div className="grid grid-cols-[auto_1fr] gap-2">
+            )}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[auto_auto_1fr]">
               <Button variant="secondary" size="lg" icon={<RetakeIcon />} onClick={handleRetake}>
                 Retake
               </Button>
-              <Button size="lg" icon={<SparkleIcon />} onClick={() => onExtract(image, autoCrop)}>
-                Extract Data
+              <Button variant="secondary" size="lg" icon={<CropIcon />} onClick={() => setCropping(true)}>
+                Crop
+              </Button>
+              <Button size="lg" icon={<SparkleIcon />} onClick={() => onExtract(image, autoCrop)} className="col-span-2 sm:col-span-1">
+                {nameplate ? 'Read Nameplate' : 'Extract Data'}
               </Button>
             </div>
           </div>
@@ -159,11 +172,27 @@ export function ScannerPage({ onBack, onExtract }: ScannerPageProps) {
 
         {!image && (
           <p className="text-center text-xs text-slate-500">
-            Tip: fill the frame with the document, hold steady and avoid glare.{hasNativeCamera && ' HD photo gives the best accuracy.'}
+            {nameplate
+              ? 'Tip: fill the frame with the plate, hold steady, and tilt slightly if it reflects light.'
+              : 'Tip: fill the frame with the document, hold steady and avoid glare.'}
+            {hasNativeCamera && ' HD photo gives the best accuracy.'}
           </p>
         )}
         <PrivacyNote className="justify-center text-center" />
       </main>
+
+      {cropping && image && (
+        <ImageCropper
+          image={image}
+          onCancel={() => setCropping(false)}
+          onApply={(cropped) => {
+            setImage(cropped)
+            // The user framed it by hand; don't let auto-crop trim it further.
+            setAutoCrop(false)
+            setCropping(false)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -1,4 +1,7 @@
-export type Stage = 'home' | 'scan' | 'processing' | 'results'
+export type Stage = 'home' | 'scan' | 'processing' | 'results' | 'review' | 'register'
+
+/** nameplate: transformer nameplates → register of Make, Sr. No, KVA, Year. table: any document → table. */
+export type ScanMode = 'nameplate' | 'table'
 
 export interface Cell {
   value: string

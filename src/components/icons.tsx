@@ -120,3 +120,10 @@ export const BoltIcon = (p: IconProps) => (
     <path d="M13 2 3 14h9l-1 8 10-12h-9z" />
   </Icon>
 )
+
+export const CropIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 2v14a2 2 0 0 0 2 2h14" />
+    <path d="M18 22V8a2 2 0 0 0-2-2H2" />
+  </Icon>
+)

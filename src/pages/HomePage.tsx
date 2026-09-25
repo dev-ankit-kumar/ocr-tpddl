@@ -3,16 +3,23 @@ import { BoltIcon, CameraIcon, ShieldIcon, TableIcon } from '../components/icons
 import { InstallAppButton } from '../components/InstallAppButton'
 import { Logo } from '../components/Logo'
 import { PrivacyNote } from '../components/PrivacyNote'
+import type { ScanMode } from '../types'
 
 const STEPS = ['Scan', 'Capture', 'Extract', 'Review', 'Download']
 
 const FEATURES = [
-  { icon: <ShieldIcon />, title: 'Private by design', text: 'OCR runs in your browser. Nothing is uploaded.' },
-  { icon: <TableIcon />, title: 'Smart tables', text: 'Rows, columns and key–value pairs are detected automatically.' },
-  { icon: <BoltIcon />, title: 'Edit, then export', text: 'Fix anything OCR missed and download a real .xlsx file.' },
+  { icon: <BoltIcon />, title: 'Nameplates in one tap', text: 'Make, Sr. No, KVA and Year of Mfg are found and checked automatically.' },
+  { icon: <TableIcon />, title: 'One Excel for all', text: 'Scan plate after plate; download a formatted register at the end.' },
+  { icon: <ShieldIcon />, title: 'Private by design', text: 'OCR runs on your device. Nothing is uploaded.' },
 ]
 
-export function HomePage({ onStart }: { onStart: () => void }) {
+interface HomePageProps {
+  savedCount: number
+  onStart: (mode: ScanMode) => void
+  onOpenRegister: () => void
+}
+
+export function HomePage({ savedCount, onStart, onOpenRegister }: HomePageProps) {
   return (
     <main className="mx-auto flex min-h-full max-w-xl flex-col px-5 pt-10 safe-bottom sm:pt-16">
       <Logo large />
@@ -20,8 +27,8 @@ export function HomePage({ onStart }: { onStart: () => void }) {
         Turn documents into Excel in seconds
       </h1>
       <p className="mt-4 text-base leading-relaxed text-slate-600">
-        Photograph a receipt, invoice, price list or any printed table. SnapSheet reads it, lays it out in rows and columns, and
-        hands you a spreadsheet.
+        Photograph transformer nameplates and get a clean Excel register of <strong>Make, Sr. No, KVA</strong> and{' '}
+        <strong>Year of Mfg</strong>, or turn any printed table into a spreadsheet.
       </p>
 
       <ol className="mt-6 flex flex-wrap items-center gap-x-1.5 gap-y-2 text-xs font-medium text-slate-500" aria-label="How it works">
@@ -33,14 +40,20 @@ export function HomePage({ onStart }: { onStart: () => void }) {
         ))}
       </ol>
 
-      <div className="mt-8">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Button size="lg" icon={<CameraIcon />} onClick={onStart} fullWidth className="sm:w-auto">
-            Scan Document
+      <div className="mt-8 flex flex-col gap-3">
+        <Button size="lg" icon={<CameraIcon />} onClick={() => onStart('nameplate')} fullWidth>
+          Scan Nameplate
+        </Button>
+        <div className="grid grid-cols-2 gap-3">
+          <Button variant="secondary" icon={<TableIcon />} onClick={onOpenRegister}>
+            Register{savedCount > 0 ? ` (${savedCount})` : ''}
           </Button>
-          <InstallAppButton />
+          <Button variant="secondary" icon={<CameraIcon />} onClick={() => onStart('table')}>
+            Scan any table
+          </Button>
         </div>
-        <PrivacyNote className="mt-4" />
+        <InstallAppButton />
+        <PrivacyNote className="mt-1" />
       </div>
 
       <ul className="mt-10 grid gap-3 pb-8 sm:grid-cols-3">
